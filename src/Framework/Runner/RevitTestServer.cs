@@ -2,6 +2,8 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace RTF.Framework
 {
@@ -15,6 +17,8 @@ namespace RTF.Framework
         private Socket handlerSocket;
         private Socket serverSocket;
 
+        private TcpListener tcpListener;
+        private CancellationTokenSource cancellationToken = new CancellationTokenSource();
         /// <summary>
         /// The port number for the server to be connected to
         /// </summary>
@@ -41,13 +45,16 @@ namespace RTF.Framework
         public void Start(int timeout)
         {
             IPAddress ipAddress = IPAddress.Parse(CommonData.LocalIPAddress);
-            serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            serverSocket.Bind(new IPEndPoint(ipAddress, 0));
+            //serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            //serverSocket.Bind(new IPEndPoint(ipAddress, 0));
 
-            IPEndPoint endPoint = serverSocket.LocalEndPoint as IPEndPoint;
+            tcpListener = new TcpListener(new IPEndPoint(ipAddress, 0));
+
+            IPEndPoint endPoint = tcpListener.LocalEndpoint as IPEndPoint;
             Port = endPoint.Port;
 
-            serverSocket.Listen(1);
+            tcpListener.Start(1);
+            //serverSocket.Listen(1);
             receiveTimeout = timeout;
         }
 
@@ -63,8 +70,10 @@ namespace RTF.Framework
             }
             if (serverSocket != null)
             {
-                serverSocket.Close();
-                serverSocket = null;
+                tcpListener.Stop();
+                tcpListener = null;
+                //serverSocket.Close();
+                //serverSocket = null;
             }
         }
 
@@ -73,6 +82,7 @@ namespace RTF.Framework
         /// </summary>
         public void ResetWorkingSocket()
         {
+            cancellationToken = new CancellationTokenSource();
             if (handlerSocket != null)
             {
                 handlerSocket.Close();
@@ -83,18 +93,19 @@ namespace RTF.Framework
 
         public void Reset()
         {
-            ResetWorkingSocket();
+            cancellationToken.Cancel();
+            //ResetWorkingSocket();
 
-            int port = (serverSocket.LocalEndPoint as IPEndPoint).Port;
-            serverSocket.Shutdown(SocketShutdown.Both);
-            serverSocket.Close();
+            //int port = (serverSocket.LocalEndPoint as IPEndPoint).Port;
+            //serverSocket.Shutdown(SocketShutdown.Both);
+            //serverSocket.Close();
 
-            IPAddress ipAddress = IPAddress.Parse(CommonData.LocalIPAddress);
-            serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            serverSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            serverSocket.Bind(new IPEndPoint(ipAddress, port));
+            //IPAddress ipAddress = IPAddress.Parse(CommonData.LocalIPAddress);
+            //serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            //serverSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            //serverSocket.Bind(new IPEndPoint(ipAddress, port));
 
-            serverSocket.Listen(1);
+            //serverSocket.Listen(1);
         }
 
         /// <summary>
@@ -171,8 +182,21 @@ namespace RTF.Framework
             Socket handlerSocket = null;
             while (true)
             {
-                serverSocket.Poll(1000, SelectMode.SelectRead);
-                handlerSocket = serverSocket.Accept();
+                Task<Socket> acceptTask = tcpListener.AcceptSocketAsync();
+
+                try
+                {
+                    acceptTask.Wait(cancellationToken.Token);
+
+                    if (!acceptTask.IsCanceled) {
+                        handlerSocket = acceptTask.Result;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
                 var endPoint = handlerSocket.RemoteEndPoint as IPEndPoint;
                 if (endPoint != null && 
                     string.CompareOrdinal(endPoint.Address.ToString(), CommonData.LocalIPAddress) == 0)
@@ -181,6 +205,7 @@ namespace RTF.Framework
                 }
                 handlerSocket.Close();
             }
+
             return handlerSocket;
         }
     }
