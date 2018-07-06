@@ -105,7 +105,7 @@ namespace RTF.Framework
             }
 
             var testModelAttrib =
-                testAttribs.FirstOrDefault(x => x.Constructor.DeclaringType.Name == "TestModelAttribute");
+                testAttribs.FirstOrDefault(x => x.Constructor.DeclaringType.Name == nameof(TestModelAttribute));
 
             if (testModelAttrib != null)
             {

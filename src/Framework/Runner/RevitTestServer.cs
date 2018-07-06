@@ -1,33 +1,24 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Xml.Serialization;
-using Autodesk.RevitAddIns;
-using Dynamo.NUnit.Tests;
-using Microsoft.Practices.Prism;
-using NDesk.Options;
 
 namespace RTF.Framework
 {
     public class RevitTestServer
     {
-        private Socket serverSocket;
-        private Socket handlerSocket;
-        private int iPort;
-
         private static RevitTestServer instance;
         private static readonly Object mutex = new Object();
         private static MessageBuffer buffer;
         private static int receiveTimeout;
+
+        private Socket handlerSocket;
+        private Socket serverSocket;
+
+        /// <summary>
+        /// The port number for the server to be connected to
+        /// </summary>
+        public int Port { get; private set; }
 
         /// <summary>
         /// A singleton instance
@@ -54,7 +45,7 @@ namespace RTF.Framework
             serverSocket.Bind(new IPEndPoint(ipAddress, 0));
 
             IPEndPoint endPoint = serverSocket.LocalEndPoint as IPEndPoint;
-            iPort = endPoint.Port;
+            Port = endPoint.Port;
 
             serverSocket.Listen(1);
             receiveTimeout = timeout;
@@ -90,6 +81,22 @@ namespace RTF.Framework
             MessageResult.PrevMessageID = -1;
         }
 
+        public void Reset()
+        {
+            ResetWorkingSocket();
+
+            int port = (serverSocket.LocalEndPoint as IPEndPoint).Port;
+            serverSocket.Shutdown(SocketShutdown.Both);
+            serverSocket.Close();
+
+            IPAddress ipAddress = IPAddress.Parse(CommonData.LocalIPAddress);
+            serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            serverSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            serverSocket.Bind(new IPEndPoint(ipAddress, port));
+
+            serverSocket.Listen(1);
+        }
+
         /// <summary>
         /// This will try to accept a connection from localhost and receive a packet.
         /// It will then buffer the packet and try to create a message.
@@ -101,6 +108,12 @@ namespace RTF.Framework
             if (handlerSocket == null)
             {
                 handlerSocket = AcceptLocalConnection();
+
+                if (handlerSocket == null)
+                {
+                    result.Status = MessageStatus.OtherError;
+                    return result;
+                }
                 handlerSocket.ReceiveTimeout = receiveTimeout;
             }
 
@@ -158,6 +171,7 @@ namespace RTF.Framework
             Socket handlerSocket = null;
             while (true)
             {
+                serverSocket.Poll(1000, SelectMode.SelectRead);
                 handlerSocket = serverSocket.Accept();
                 var endPoint = handlerSocket.RemoteEndPoint as IPEndPoint;
                 if (endPoint != null && 
@@ -168,25 +182,6 @@ namespace RTF.Framework
                 handlerSocket.Close();
             }
             return handlerSocket;
-        }
-
-        protected Socket ServerSocket
-        {
-            get
-            {
-                return serverSocket;
-            }
-        }
-
-        /// <summary>
-        /// The port number for the server to be connected to
-        /// </summary>
-        public int Port
-        {
-            get
-            {
-                return iPort;
-            }
         }
     }
 }

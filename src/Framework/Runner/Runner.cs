@@ -975,12 +975,11 @@ namespace RTF.Framework
             }
             else
             {
-                var time = 0;
+                Stopwatch sw = new Stopwatch();
+                sw.Start();
                 while (!process.WaitForExit(1000))
                 {
-                    Console.Write(".");
-                    time += 1000;
-                    if (time > Timeout)
+                    if (sw.ElapsedMilliseconds > Timeout)
                     {
                         td.TestStatus = TestStatus.Failure;
                         OnTestTimedOut(td);
@@ -992,13 +991,26 @@ namespace RTF.Framework
                 if (timedOut)
                 {
                     if (!process.HasExited)
+                    {
                         process.Kill();
+                    }
                 }
             }
 
             if (!timedOut)
             {
-                OnTestComplete(td);
+                if (process.ExitCode == 0)
+                {
+                    OnTestComplete(td);
+                }
+                else
+                {
+                    string errorMessage = $"ERROR: Revit terminated with an error: {process.ExitCode}";
+                    td.TestStatus = TestStatus.Failure;
+                    OnTestFailed(td, errorMessage, "");
+
+                    Console.WriteLine(errorMessage);
+                }
             }
 
             Console.WriteLine();
@@ -1072,6 +1084,14 @@ namespace RTF.Framework
             ITestData runningTestCase = null;
             while (true)
             {
+                new System.Threading.Thread(new System.Threading.ThreadStart(() =>
+                {
+                    process.WaitForExit();
+                    if (process.ExitCode != 0)
+                    {
+                        RevitTestServer.Instance.Reset();
+                    }
+                })).Start();
                 MessageResult msgResult = RevitTestServer.Instance.GetNextMessageResult();
                 if (watch.ElapsedMilliseconds > Timeout || msgResult.Status != MessageStatus.Success)
                 {
@@ -1355,7 +1375,9 @@ namespace RTF.Framework
         private void SetupFixtureTests(IFixtureData fd, bool continuous = false)
         {
             if (fd.ShouldRun == false)
+            {
                 return;
+            }
 
             SetupIndividualTests(fd.Tests.ToList(), continuous);
         }
@@ -1371,7 +1393,9 @@ namespace RTF.Framework
             ModelSemantics modelSemantics = ModelSemantics.Open | ModelSemantics.Close)
         {
             if (td.ShouldRun == false)
+            {
                 return true;
+            }
 
             try
             {
@@ -1457,7 +1481,9 @@ namespace RTF.Framework
         private void DeleteAddins()
         {
             if (!CopiedAddins.Any() || CopiedAddins == null)
+            {
                 return;
+            }
 
             foreach (var file in CopiedAddins.Select(addin => Path.Combine(WorkingDirectory, addin)))
             {
